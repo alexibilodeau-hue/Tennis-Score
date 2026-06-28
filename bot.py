@@ -1,7 +1,7 @@
 import os
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 import db
@@ -139,10 +139,13 @@ async def on_member_remove(member: discord.Member):
         return
     if GUILD_ID and member.guild.id != GUILD_ID:
         return
-    role_ids = [r.id for r in member.roles if r.name != "@everyone"]
-    print(f"[on_member_remove] roles sauvegardes pour {member.id}: {role_ids}", flush=True)
-    if role_ids:
-        db.save_roles(member.id, role_ids)
+    try:
+        role_ids = [r.id for r in member.roles if r.name != "@everyone"]
+        print(f"[on_member_remove] roles sauvegardes pour {member.id}: {role_ids}", flush=True)
+        if role_ids:
+            db.save_roles(member.id, role_ids)
+    except Exception as e:
+        print(f"[on_member_remove] ERREUR: {e!r}", flush=True)
 
 
 @bot.event
@@ -174,6 +177,33 @@ async def on_member_join(member: discord.Member):
         raise
 
 
+async def reconcile_all_members():
+    """Re-verifie tous les membres et corrige les salons/permissions manquants ou casses.
+    Sert de filet de securite si un evenement on_member_join/remove a ete manque
+    (redemarrage du bot, coupure reseau, etc.)."""
+    if not GUILD_ID:
+        return
+    guild = bot.get_guild(GUILD_ID)
+    if not guild:
+        return
+    count = 0
+    async for member in guild.fetch_members(limit=None):
+        if member.bot:
+            continue
+        try:
+            await get_or_create_personal_channel(member)
+            await get_or_create_demande_channel(member)
+            count += 1
+        except Exception as e:
+            print(f"[reconcile] ERREUR pour {member} ({member.id}): {e!r}", flush=True)
+    print(f"[reconcile] {count} membres verifies.", flush=True)
+
+
+@tasks.loop(minutes=10)
+async def reconcile_loop():
+    await reconcile_all_members()
+
+
 @bot.event
 async def on_ready():
     db.init_db()
@@ -185,14 +215,10 @@ async def on_ready():
         await bot.tree.sync()
     print(f"Connecte en tant que {bot.user} - commandes synchronisees.")
 
-    if GUILD_ID:
-        guild = bot.get_guild(GUILD_ID)
-        if guild:
-            async for member in guild.fetch_members(limit=None):
-                if not member.bot:
-                    await get_or_create_personal_channel(member)
-                    await get_or_create_demande_channel(member)
-            print("Espaces personnels et demandes d'acces verifies pour tous les membres actuels.")
+    await reconcile_all_members()
+
+    if not reconcile_loop.is_running():
+        reconcile_loop.start()
 
 
 # ---------- PROFIL ----------
