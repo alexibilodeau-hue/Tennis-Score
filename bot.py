@@ -114,6 +114,19 @@ async def get_or_create_demande_channel(member: discord.Member):
     return channel
 
 
+async def announce_new_member(member: discord.Member):
+    channel = discord.utils.find(lambda c: c.name == "bienvenue", member.guild.text_channels)
+    if not channel:
+        return
+    embed = mk_embed(
+        "Nouveau membre !",
+        f"Bienvenue {member.mention} sur le serveur Tennis Sherbrooke ! 🎾\n\n"
+        "Va te presenter dans ton salon de demande d'acces prive pour obtenir ton acces complet.",
+        color=discord.Color.green(),
+    )
+    await channel.send(embed=embed)
+
+
 @bot.event
 async def on_member_join(member: discord.Member):
     if member.bot:
@@ -122,6 +135,7 @@ async def on_member_join(member: discord.Member):
         return
     await get_or_create_personal_channel(member)
     await get_or_create_demande_channel(member)
+    await announce_new_member(member)
 
 
 @bot.event
