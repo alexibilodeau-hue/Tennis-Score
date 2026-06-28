@@ -71,13 +71,21 @@ async def on_member_join(member: discord.Member):
 @bot.event
 async def on_ready():
     db.init_db()
-    guild = discord.Object(id=GUILD_ID) if GUILD_ID else None
-    if guild:
-        bot.tree.copy_global_to(guild=guild)
-        await bot.tree.sync(guild=guild)
+    guild_ref = discord.Object(id=GUILD_ID) if GUILD_ID else None
+    if guild_ref:
+        bot.tree.copy_global_to(guild=guild_ref)
+        await bot.tree.sync(guild=guild_ref)
     else:
         await bot.tree.sync()
     print(f"Connecte en tant que {bot.user} - commandes synchronisees.")
+
+    if GUILD_ID:
+        guild = bot.get_guild(GUILD_ID)
+        if guild:
+            async for member in guild.fetch_members(limit=None):
+                if not member.bot:
+                    await get_or_create_personal_channel(member)
+            print("Espaces personnels verifies pour tous les membres actuels.")
 
 
 # ---------- PROFIL ----------
