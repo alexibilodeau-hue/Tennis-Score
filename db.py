@@ -34,6 +34,11 @@ def init_db():
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS saved_roles (
+        user_id TEXT PRIMARY KEY,
+        role_ids TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS match_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         player1_id TEXT NOT NULL,
@@ -151,3 +156,21 @@ def get_match_history(user_id, limit=5):
     ).fetchall()
     conn.close()
     return rows
+
+def save_roles(user_id, role_ids):
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO saved_roles (user_id, role_ids) VALUES (?, ?) "
+        "ON CONFLICT(user_id) DO UPDATE SET role_ids = excluded.role_ids",
+        (str(user_id), ",".join(str(r) for r in role_ids)),
+    )
+    conn.commit()
+    conn.close()
+
+def get_saved_roles(user_id):
+    conn = get_conn()
+    row = conn.execute("SELECT role_ids FROM saved_roles WHERE user_id = ?", (str(user_id),)).fetchone()
+    conn.close()
+    if not row or not row["role_ids"]:
+        return []
+    return [int(r) for r in row["role_ids"].split(",") if r]

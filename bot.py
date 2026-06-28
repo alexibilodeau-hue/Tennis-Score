@@ -130,11 +130,30 @@ async def announce_new_member(member: discord.Member):
 
 
 @bot.event
+async def on_member_remove(member: discord.Member):
+    if member.bot:
+        return
+    if GUILD_ID and member.guild.id != GUILD_ID:
+        return
+    role_ids = [r.id for r in member.roles if r.name != "@everyone"]
+    if role_ids:
+        db.save_roles(member.id, role_ids)
+
+
+@bot.event
 async def on_member_join(member: discord.Member):
     if member.bot:
         return
     if GUILD_ID and member.guild.id != GUILD_ID:
         return
+
+    saved_role_ids = db.get_saved_roles(member.id)
+    if saved_role_ids:
+        roles_to_restore = [member.guild.get_role(rid) for rid in saved_role_ids]
+        roles_to_restore = [r for r in roles_to_restore if r is not None]
+        if roles_to_restore:
+            await member.add_roles(*roles_to_restore, reason="Restauration des roles apres re-entree sur le serveur")
+
     await get_or_create_personal_channel(member)
     await get_or_create_demande_channel(member)
     await announce_new_member(member)
