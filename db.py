@@ -53,7 +53,18 @@ def init_db():
     );
     """)
     conn.commit()
+
+    _add_column_if_missing(conn, "players", "niveau_ntrp", "TEXT")
+    _add_column_if_missing(conn, "players", "dispo_semaine", "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "players", "dispo_soirs", "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "players", "dispo_weekend", "INTEGER NOT NULL DEFAULT 0")
+    conn.commit()
     conn.close()
+
+def _add_column_if_missing(conn, table, col, coltype):
+    existing = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+    if col not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
 
 def get_player(user_id: str):
     conn = get_conn()
@@ -67,7 +78,10 @@ def ensure_player(user_id: str):
     conn.commit()
     conn.close()
 
-def update_player_profile(user_id: str, age=None, objectif=None, dispo=None, preference=None):
+def update_player_profile(
+    user_id: str, age=None, objectif=None, preference=None,
+    niveau_ntrp=None, dispo_semaine=None, dispo_soirs=None, dispo_weekend=None,
+):
     ensure_player(user_id)
     conn = get_conn()
     fields, values = [], []
@@ -75,15 +89,37 @@ def update_player_profile(user_id: str, age=None, objectif=None, dispo=None, pre
         fields.append("age = ?"); values.append(age)
     if objectif is not None:
         fields.append("objectif = ?"); values.append(objectif)
-    if dispo is not None:
-        fields.append("dispo = ?"); values.append(dispo)
     if preference is not None:
         fields.append("preference = ?"); values.append(preference)
+    if niveau_ntrp is not None:
+        fields.append("niveau_ntrp = ?"); values.append(niveau_ntrp)
+    if dispo_semaine is not None:
+        fields.append("dispo_semaine = ?"); values.append(1 if dispo_semaine else 0)
+    if dispo_soirs is not None:
+        fields.append("dispo_soirs = ?"); values.append(1 if dispo_soirs else 0)
+    if dispo_weekend is not None:
+        fields.append("dispo_weekend = ?"); values.append(1 if dispo_weekend else 0)
     if fields:
         values.append(str(user_id))
         conn.execute(f"UPDATE players SET {', '.join(fields)} WHERE user_id = ?", values)
         conn.commit()
     conn.close()
+
+def search_available(moment: str, exclude_user_id=None, preference=None):
+    column = {"semaine": "dispo_semaine", "soirs": "dispo_soirs", "weekend": "dispo_weekend"}[moment]
+    conn = get_conn()
+    query = f"SELECT * FROM players WHERE {column} = 1"
+    params = []
+    if exclude_user_id is not None:
+        query += " AND user_id != ?"
+        params.append(str(exclude_user_id))
+    if preference:
+        query += " AND (preference = ? OR preference = 'les_deux' OR preference IS NULL)"
+        params.append(preference)
+    query += " ORDER BY elo DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return rows
 
 def set_elo(user_id: str, elo: float):
     ensure_player(user_id)

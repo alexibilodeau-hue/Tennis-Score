@@ -220,14 +220,24 @@ async def profil(interaction: discord.Interaction, membre: discord.Member = None
     db.ensure_player(target.id)
     p = db.get_player(target.id)
 
+    dispo_tags = []
+    if p["dispo_semaine"]:
+        dispo_tags.append("Semaine")
+    if p["dispo_soirs"]:
+        dispo_tags.append("Soirs")
+    if p["dispo_weekend"]:
+        dispo_tags.append("Fins de semaine")
+
     embed = mk_embed(f"Profil de {target.display_name}", color=discord.Color.blurple())
+    embed.add_field(name="Niveau (NTRP)", value=p["niveau_ntrp"] or "non defini", inline=True)
     embed.add_field(name="Niveau (Elo)", value=str(round(p["elo"])), inline=True)
+    embed.add_field(name="Age", value=str(p["age"]) if p["age"] else "non defini", inline=True)
     embed.add_field(name="Matchs joues", value=str(p["matches_played"]), inline=True)
     embed.add_field(name="Victoires / Defaites", value=f"{p['wins']} / {p['losses']}", inline=True)
     embed.add_field(name="Serie de victoires", value=str(p["win_streak"]), inline=True)
     embed.add_field(name="Objectif", value=p["objectif"] or "non defini", inline=True)
     embed.add_field(name="Preference", value=p["preference"] or "non defini", inline=True)
-    embed.add_field(name="Disponibilite", value=p["dispo"] or "non definie", inline=False)
+    embed.add_field(name="Disponibilite", value=", ".join(dispo_tags) or "non definie", inline=False)
     if target.avatar:
         embed.set_thumbnail(url=target.avatar.url)
     await interaction.response.send_message(embed=embed)
@@ -235,27 +245,78 @@ async def profil(interaction: discord.Interaction, membre: discord.Member = None
 
 @bot.tree.command(name="modifier-profil", description="Met a jour ton profil joueur.")
 @app_commands.describe(
+    niveau_ntrp="Ton niveau estime (ex: 3.5)",
     objectif="Ton objectif principal",
     preference="Simple, double ou les deux",
-    dispo="Tes disponibilites (ex: soirs et fins de semaine)",
     age="Ton age (optionnel)",
+    dispo_semaine="Disponible en semaine (jour)",
+    dispo_soirs="Disponible en soiree",
+    dispo_weekend="Disponible les fins de semaine",
 )
 @app_commands.choices(objectif=OBJECTIF_CHOICES, preference=PREFERENCE_CHOICES)
 async def modifier_profil(
     interaction: discord.Interaction,
+    niveau_ntrp: str = None,
     objectif: app_commands.Choice[str] = None,
     preference: app_commands.Choice[str] = None,
-    dispo: str = None,
     age: int = None,
+    dispo_semaine: bool = None,
+    dispo_soirs: bool = None,
+    dispo_weekend: bool = None,
 ):
     db.update_player_profile(
         interaction.user.id,
         age=age,
         objectif=objectif.value if objectif else None,
-        dispo=dispo,
         preference=preference.value if preference else None,
+        niveau_ntrp=niveau_ntrp,
+        dispo_semaine=dispo_semaine,
+        dispo_soirs=dispo_soirs,
+        dispo_weekend=dispo_weekend,
     )
     await interaction.response.send_message("Profil mis a jour. Utilise /profil pour le voir.", ephemeral=True)
+
+
+@bot.tree.command(name="chercher-partenaire", description="Trouve des membres disponibles pour jouer.")
+@app_commands.describe(
+    moment="Quand veux-tu jouer ?",
+    preference="Filtrer par simple ou double (optionnel)",
+)
+@app_commands.choices(
+    moment=[
+        app_commands.Choice(name="Ce soir / en soiree", value="soirs"),
+        app_commands.Choice(name="En semaine (jour)", value="semaine"),
+        app_commands.Choice(name="Fin de semaine", value="weekend"),
+    ],
+    preference=PREFERENCE_CHOICES,
+)
+async def chercher_partenaire(
+    interaction: discord.Interaction,
+    moment: app_commands.Choice[str],
+    preference: app_commands.Choice[str] = None,
+):
+    rows = db.search_available(
+        moment.value,
+        exclude_user_id=interaction.user.id,
+        preference=preference.value if preference else None,
+    )
+    if not rows:
+        await interaction.response.send_message(
+            f"Personne n'a indique etre disponible pour : {moment.name}. Reessaie plus tard ou poste dans #recherche-partenaire.",
+            ephemeral=True,
+        )
+        return
+
+    lines = []
+    for row in rows[:15]:
+        user = await bot.fetch_user(int(row["user_id"]))
+        niveau = row["niveau_ntrp"] or f"Elo {round(row['elo'])}"
+        pref = row["preference"] or "simple/double"
+        obj = row["objectif"] or "non defini"
+        lines.append(f"**{user.display_name if hasattr(user, 'display_name') else user.name}** - Niveau {niveau} - {pref} - Objectif: {obj}")
+
+    embed = mk_embed(f"Disponibles : {moment.name}", "\n".join(lines), color=discord.Color.teal())
+    await interaction.response.send_message(embed=embed)
 
 
 # ---------- QUESTIONNAIRE NIVEAU ----------
