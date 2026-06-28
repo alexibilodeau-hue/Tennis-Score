@@ -16,6 +16,9 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 ESPACE_PERSONNEL_CATEGORY_NAME = "ESPACE PERSONNEL"
+DEMANDE_ACCES_CATEGORY_NAME = "DEMANDES D'ACCES"
+MOD_ROLE_NAMES = {"Founder", "Modérateur"}
+MEMBRE_ROLE_NAME = "Membre"
 
 
 def mk_embed(title, description="", color=discord.Color.green()):
@@ -59,6 +62,58 @@ async def get_or_create_personal_channel(member: discord.Member) -> discord.Text
     return channel
 
 
+def get_mod_roles(guild: discord.Guild):
+    return [r for r in guild.roles if r.name in MOD_ROLE_NAMES]
+
+
+async def get_or_create_demande_category(guild: discord.Guild) -> discord.CategoryChannel:
+    for cat in guild.categories:
+        if cat.name == DEMANDE_ACCES_CATEGORY_NAME:
+            return cat
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        guild.me: discord.PermissionOverwrite(view_channel=True),
+    }
+    for role in get_mod_roles(guild):
+        overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+    return await guild.create_category(DEMANDE_ACCES_CATEGORY_NAME, overwrites=overwrites)
+
+
+async def get_or_create_demande_channel(member: discord.Member):
+    guild = member.guild
+    membre_role = discord.utils.find(lambda r: r.name == MEMBRE_ROLE_NAME, guild.roles)
+    if membre_role and membre_role in member.roles:
+        return None
+
+    topic = f"demande-acces:{member.id}"
+    for ch in guild.text_channels:
+        if ch.topic == topic:
+            return ch
+
+    category = await get_or_create_demande_category(guild)
+    channel_name = f"demande-{member.name}".lower()[:90]
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        guild.me: discord.PermissionOverwrite(view_channel=True),
+        member: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+    }
+    for role in get_mod_roles(guild):
+        overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+
+    channel = await guild.create_text_channel(
+        channel_name, category=category, overwrites=overwrites, topic=topic
+    )
+    embed = mk_embed(
+        f"Bienvenue {member.display_name} !",
+        "Presente-toi ici (prenom, niveau au tennis, depuis quand tu joues, pourquoi tu veux rejoindre).\n\n"
+        "Seuls toi et l'equipe (Founder / Moderateur) peuvent voir ce salon. "
+        "Une fois ta demande validee, tu auras acces a tout le serveur.",
+        color=discord.Color.orange(),
+    )
+    await channel.send(embed=embed)
+    return channel
+
+
 @bot.event
 async def on_member_join(member: discord.Member):
     if member.bot:
@@ -66,6 +121,7 @@ async def on_member_join(member: discord.Member):
     if GUILD_ID and member.guild.id != GUILD_ID:
         return
     await get_or_create_personal_channel(member)
+    await get_or_create_demande_channel(member)
 
 
 @bot.event
@@ -85,7 +141,8 @@ async def on_ready():
             async for member in guild.fetch_members(limit=None):
                 if not member.bot:
                     await get_or_create_personal_channel(member)
-            print("Espaces personnels verifies pour tous les membres actuels.")
+                    await get_or_create_demande_channel(member)
+            print("Espaces personnels et demandes d'acces verifies pour tous les membres actuels.")
 
 
 # ---------- PROFIL ----------
