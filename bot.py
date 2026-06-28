@@ -41,6 +41,7 @@ async def get_or_create_personal_channel(member: discord.Member) -> discord.Text
     channel_name = f"espace-{member.name}".lower()[:90]
     for ch in guild.text_channels:
         if ch.topic == f"personal-space:{member.id}":
+            await ch.set_permissions(member, view_channel=True, send_messages=True, read_message_history=True)
             return ch
     category = await get_or_create_personal_category(guild)
     overwrites = {
@@ -88,6 +89,7 @@ async def get_or_create_demande_channel(member: discord.Member):
     topic = f"demande-acces:{member.id}"
     for ch in guild.text_channels:
         if ch.topic == topic:
+            await ch.set_permissions(member, view_channel=True, send_messages=True, read_message_history=True)
             return ch
 
     category = await get_or_create_demande_category(guild)
