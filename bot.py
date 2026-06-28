@@ -131,32 +131,44 @@ async def announce_new_member(member: discord.Member):
 
 @bot.event
 async def on_member_remove(member: discord.Member):
+    print(f"[on_member_remove] {member} ({member.id}) a quitte le serveur {member.guild.id}", flush=True)
     if member.bot:
         return
     if GUILD_ID and member.guild.id != GUILD_ID:
         return
     role_ids = [r.id for r in member.roles if r.name != "@everyone"]
+    print(f"[on_member_remove] roles sauvegardes pour {member.id}: {role_ids}", flush=True)
     if role_ids:
         db.save_roles(member.id, role_ids)
 
 
 @bot.event
 async def on_member_join(member: discord.Member):
+    print(f"[on_member_join] {member} ({member.id}) a rejoint le serveur {member.guild.id}", flush=True)
     if member.bot:
         return
     if GUILD_ID and member.guild.id != GUILD_ID:
         return
 
-    saved_role_ids = db.get_saved_roles(member.id)
-    if saved_role_ids:
-        roles_to_restore = [member.guild.get_role(rid) for rid in saved_role_ids]
-        roles_to_restore = [r for r in roles_to_restore if r is not None]
-        if roles_to_restore:
-            await member.add_roles(*roles_to_restore, reason="Restauration des roles apres re-entree sur le serveur")
+    try:
+        saved_role_ids = db.get_saved_roles(member.id)
+        print(f"[on_member_join] roles sauvegardes trouves pour {member.id}: {saved_role_ids}", flush=True)
+        if saved_role_ids:
+            roles_to_restore = [member.guild.get_role(rid) for rid in saved_role_ids]
+            roles_to_restore = [r for r in roles_to_restore if r is not None]
+            if roles_to_restore:
+                await member.add_roles(*roles_to_restore, reason="Restauration des roles apres re-entree sur le serveur")
+                print(f"[on_member_join] roles restaures: {[r.name for r in roles_to_restore]}", flush=True)
 
-    await get_or_create_personal_channel(member)
-    await get_or_create_demande_channel(member)
-    await announce_new_member(member)
+        await get_or_create_personal_channel(member)
+        print(f"[on_member_join] espace personnel ok pour {member.id}", flush=True)
+        await get_or_create_demande_channel(member)
+        print(f"[on_member_join] salon demande ok pour {member.id}", flush=True)
+        await announce_new_member(member)
+        print(f"[on_member_join] annonce bienvenue envoyee pour {member.id}", flush=True)
+    except Exception as e:
+        print(f"[on_member_join] ERREUR: {e!r}", flush=True)
+        raise
 
 
 @bot.event
