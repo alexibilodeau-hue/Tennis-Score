@@ -107,7 +107,10 @@ async def get_or_create_demande_channel(member: discord.Member):
     )
     embed = mk_embed(
         f"Bienvenue {member.display_name} !",
-        "Presente-toi ici (prenom, niveau au tennis, depuis quand tu joues, pourquoi tu veux rejoindre).\n\n"
+        "Pour qu'on puisse valider ta demande, remplis ton profil avec la commande :\n"
+        "`/modifier-profil` (niveau, age, objectif, preference, disponibilites)\n\n"
+        "Ensuite, tape `/profil` ici pour que l'equipe voie tout ton profil d'un coup d'oeil.\n\n"
+        "Tu peux aussi ecrire un message pour te presenter (prenom, depuis quand tu joues, pourquoi tu veux rejoindre).\n\n"
         "Seuls toi et l'equipe (Founder / Moderateur) peuvent voir ce salon. "
         "Une fois ta demande validee, tu auras acces a tout le serveur.",
         color=discord.Color.orange(),
@@ -213,10 +216,7 @@ async def mon_espace(interaction: discord.Interaction):
     await interaction.response.send_message(f"Ton espace personnel : {channel.mention}", ephemeral=True)
 
 
-@bot.tree.command(name="profil", description="Affiche ton profil joueur (ou celui d'un autre membre).")
-@app_commands.describe(membre="Le membre dont tu veux voir le profil (optionnel)")
-async def profil(interaction: discord.Interaction, membre: discord.Member = None):
-    target = membre or interaction.user
+def build_profile_embed(target) -> discord.Embed:
     db.ensure_player(target.id)
     p = db.get_player(target.id)
 
@@ -240,7 +240,14 @@ async def profil(interaction: discord.Interaction, membre: discord.Member = None
     embed.add_field(name="Disponibilite", value=", ".join(dispo_tags) or "non definie", inline=False)
     if target.avatar:
         embed.set_thumbnail(url=target.avatar.url)
-    await interaction.response.send_message(embed=embed)
+    return embed
+
+
+@bot.tree.command(name="profil", description="Affiche ton profil joueur (ou celui d'un autre membre).")
+@app_commands.describe(membre="Le membre dont tu veux voir le profil (optionnel)")
+async def profil(interaction: discord.Interaction, membre: discord.Member = None):
+    target = membre or interaction.user
+    await interaction.response.send_message(embed=build_profile_embed(target))
 
 
 @bot.tree.command(name="modifier-profil", description="Met a jour ton profil joueur.")
@@ -274,7 +281,15 @@ async def modifier_profil(
         dispo_soirs=dispo_soirs,
         dispo_weekend=dispo_weekend,
     )
-    await interaction.response.send_message("Profil mis a jour. Utilise /profil pour le voir.", ephemeral=True)
+
+    channel_topic = getattr(interaction.channel, "topic", None) or ""
+    if channel_topic.startswith("demande-acces:"):
+        await interaction.response.send_message(
+            content="Profil mis a jour - voici ta fiche complete pour l'equipe :",
+            embed=build_profile_embed(interaction.user),
+        )
+    else:
+        await interaction.response.send_message("Profil mis a jour. Utilise /profil pour le voir.", ephemeral=True)
 
 
 @bot.tree.command(name="chercher-partenaire", description="Trouve des membres disponibles pour jouer.")
