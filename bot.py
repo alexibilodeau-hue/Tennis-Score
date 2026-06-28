@@ -12,11 +12,60 @@ TOKEN = os.getenv("BOT_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 
 intents = discord.Intents.default()
+intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+ESPACE_PERSONNEL_CATEGORY_NAME = "ESPACE PERSONNEL"
 
 
 def mk_embed(title, description="", color=discord.Color.green()):
     return discord.Embed(title=title, description=description, color=color)
+
+
+async def get_or_create_personal_category(guild: discord.Guild) -> discord.CategoryChannel:
+    for cat in guild.categories:
+        if cat.name == ESPACE_PERSONNEL_CATEGORY_NAME:
+            return cat
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        guild.me: discord.PermissionOverwrite(view_channel=True),
+    }
+    return await guild.create_category(ESPACE_PERSONNEL_CATEGORY_NAME, overwrites=overwrites)
+
+
+async def get_or_create_personal_channel(member: discord.Member) -> discord.TextChannel:
+    guild = member.guild
+    channel_name = f"espace-{member.name}".lower()[:90]
+    for ch in guild.text_channels:
+        if ch.topic == f"personal-space:{member.id}":
+            return ch
+    category = await get_or_create_personal_category(guild)
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        guild.me: discord.PermissionOverwrite(view_channel=True),
+        member: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+    }
+    channel = await guild.create_text_channel(
+        channel_name, category=category, overwrites=overwrites, topic=f"personal-space:{member.id}"
+    )
+    db.ensure_player(member.id)
+    embed = mk_embed(
+        f"Bienvenue dans ton espace personnel, {member.display_name} !",
+        "Ici, seul toi (et le bot) peux voir ce salon.\n\n"
+        "Utilise `/profil` pour voir ton niveau, ton classement et tes stats a tout moment.",
+        color=discord.Color.blurple(),
+    )
+    await channel.send(embed=embed)
+    return channel
+
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    if member.bot:
+        return
+    if GUILD_ID and member.guild.id != GUILD_ID:
+        return
+    await get_or_create_personal_channel(member)
 
 
 @bot.event
@@ -44,6 +93,12 @@ PREFERENCE_CHOICES = [
     app_commands.Choice(name="Double", value="double"),
     app_commands.Choice(name="Les deux", value="les_deux"),
 ]
+
+
+@bot.tree.command(name="mon-espace", description="Cree (ou retrouve) ton espace personnel prive sur le serveur.")
+async def mon_espace(interaction: discord.Interaction):
+    channel = await get_or_create_personal_channel(interaction.user)
+    await interaction.response.send_message(f"Ton espace personnel : {channel.mention}", ephemeral=True)
 
 
 @bot.tree.command(name="profil", description="Affiche ton profil joueur (ou celui d'un autre membre).")
