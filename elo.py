@@ -1,0 +1,25 @@
+K_FACTOR = 32
+
+def expected_score(rating_a: float, rating_b: float) -> float:
+    return 1 / (1 + 10 ** ((rating_b - rating_a) / 400))
+
+def update_elo(winner_elo: float, loser_elo: float):
+    expected_winner = expected_score(winner_elo, loser_elo)
+    expected_loser = expected_score(loser_elo, winner_elo)
+    new_winner_elo = winner_elo + K_FACTOR * (1 - expected_winner)
+    new_loser_elo = loser_elo + K_FACTOR * (0 - expected_loser)
+    return round(new_winner_elo, 1), round(new_loser_elo, 1)
+
+def estimate_starting_elo(years_playing: str, ntrp_self: str, frequency: str) -> float:
+    """Estimation grossiere du niveau de depart a partir du questionnaire."""
+    base = 1200
+
+    years_map = {"jamais": -150, "moins_1": -100, "1_3": 0, "3_10": 100, "plus_10": 150}
+    ntrp_map = {"debutant": -150, "2.5_3": -50, "3.5": 0, "4.0": 100, "4.5_plus": 200}
+    freq_map = {"jamais": -50, "rarement": -20, "regulierement": 30, "tres_souvent": 60}
+
+    base += years_map.get(years_playing, 0)
+    base += ntrp_map.get(ntrp_self, 0)
+    base += freq_map.get(frequency, 0)
+
+    return max(600, round(base))

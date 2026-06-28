@@ -1,0 +1,4 @@
+.env
+tennis.db
+__pycache__/
+*.pyc
