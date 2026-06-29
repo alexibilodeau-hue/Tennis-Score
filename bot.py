@@ -37,7 +37,6 @@ TIER_DEFS = [
     ("Intermediaire", discord.Color.gold()),
     ("Expert", discord.Color.red()),
 ]
-TROUVER_PARTENAIRE_CATEGORY_NAME = "TROUVER PARTENAIRE"
 
 
 def compute_tier(elo_value: float) -> str:
@@ -281,41 +280,6 @@ async def sync_tier_role(guild: discord.Guild, user_id, elo_value: float, tier_r
         await member.remove_roles(*to_remove, reason="Mise a jour du niveau Elo")
     if tier_roles[target_tier] not in member.roles:
         await member.add_roles(tier_roles[target_tier], reason="Mise a jour du niveau Elo")
-
-
-async def ensure_partner_channels(guild: discord.Guild, tier_roles: dict):
-    category = discord.utils.find(lambda c: c.name == TROUVER_PARTENAIRE_CATEGORY_NAME, guild.categories)
-    if not category:
-        category = await guild.create_category(TROUVER_PARTENAIRE_CATEGORY_NAME)
-
-    for tier_name, role in tier_roles.items():
-        channel_name = f"partenaire-{tier_name.lower()}"
-        channel = discord.utils.find(lambda c, n=channel_name: c.name == n, guild.text_channels)
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-            role: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-        }
-        for mod_role in get_mod_roles(guild):
-            overwrites[mod_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-
-        if not channel:
-            channel = await guild.create_text_channel(
-                channel_name, category=category, overwrites=overwrites,
-                topic=f"Trouve des partenaires de niveau {tier_name}.",
-            )
-        else:
-            if channel.category_id != category.id:
-                await channel.edit(category=category)
-            for target, overwrite in overwrites.items():
-                await channel.set_permissions(target, overwrite=overwrite)
-
-        history = [m async for m in channel.history(limit=1)]
-        if not history:
-            await channel.send(
-                f"Ce salon est réservé aux membres de niveau **{tier_name}** (assigné automatiquement selon ton Elo).\n"
-                f"Utilise `/trouver-partenaire` ici pour trouver d'autres joueurs de ton niveau."
-            )
 
 
 async def get_or_create_demande_category(guild: discord.Guild) -> discord.CategoryChannel:
@@ -780,15 +744,6 @@ async def on_ready():
         await bot.tree.sync()
     print(f"Connecte en tant que {bot.user} - commandes synchronisees.")
 
-    if GUILD_ID:
-        guild = bot.get_guild(GUILD_ID)
-        if guild:
-            try:
-                tier_roles = await get_or_create_tier_roles(guild)
-                await ensure_partner_channels(guild, tier_roles)
-            except Exception as e:
-                print(f"[ensure_partner_channels] ERREUR: {e!r}", flush=True)
-
     await reconcile_all_members()
 
     if not reconcile_loop.is_running():
@@ -797,8 +752,6 @@ async def on_ready():
         weekly_checkin_loop.start()
     if not monthly_rewards_loop.is_running():
         monthly_rewards_loop.start()
-    if not smart_notifications_loop.is_running():
-        smart_notifications_loop.start()
     if not friday_event_loop.is_running():
         friday_event_loop.start()
 
@@ -2163,52 +2116,6 @@ async def monthly_rewards_loop():
         return
     await send_monthly_rewards()
     db.set_kv("monthly_rewards_last_run", this_key)
-
-
-# ---------- NOTIFICATIONS INTELLIGENTES ----------
-
-async def send_smart_notifications():
-    if not GUILD_ID:
-        return
-    guild = bot.get_guild(GUILD_ID)
-    if not guild:
-        return
-
-    today_str = datetime.now(TZ).date().isoformat()
-    if db.get_kv("smart_notif_last_run") == today_str:
-        return
-
-    day_index, hour = current_day_and_hour()
-    rows = list(db.search_recurring(day_index, hour=None, secteur=None))
-    rows += list(db.search_instant(datetime.now(TZ).isoformat()))
-
-    by_tier = {"Debutant": set(), "Intermediaire": set(), "Expert": set()}
-    for r in rows:
-        by_tier[compute_tier(r["elo"])].add(r["user_id"])
-
-    tier_roles = await get_or_create_tier_roles(guild)
-    for tier_name, ids in by_tier.items():
-        if len(ids) < 2:
-            continue
-        channel_name = f"partenaire-{tier_name.lower()}"
-        channel = discord.utils.find(lambda c, n=channel_name: c.name == n, guild.text_channels)
-        if channel:
-            try:
-                await channel.send(
-                    f"🔔 **{len(ids)} joueurs {tier_name}** sont disponibles ce soir ! "
-                    "Utilise `/trouver-partenaire` (Maintenant) pour les trouver."
-                )
-            except Exception as e:
-                print(f"[smart_notif] ERREUR sur {channel_name}: {e!r}", flush=True)
-
-    db.set_kv("smart_notif_last_run", today_str)
-
-
-@tasks.loop(minutes=60)
-async def smart_notifications_loop():
-    now = datetime.now(TZ)
-    if now.hour == 19:
-        await send_smart_notifications()
 
 
 # ---------- EVENEMENT AUTOMATIQUE DU VENDREDI ----------
