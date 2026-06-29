@@ -544,6 +544,11 @@ async def reconcile_all_members():
                 await remove_demande_access(member)
                 p = db.get_player(member.id)
                 if p:
+                    if p["matches_played"] == 0 and p["niveau_ntrp"] in NIVEAU_STARTING_ELO:
+                        expected_elo = NIVEAU_STARTING_ELO[p["niveau_ntrp"]]
+                        if p["elo"] != expected_elo:
+                            db.set_elo(member.id, expected_elo)
+                            p = db.get_player(member.id)
                     await sync_tier_role(guild, member.id, p["elo"], tier_roles=tier_roles)
             else:
                 await get_or_create_demande_channel(member)
@@ -909,6 +914,16 @@ NIVEAU_OPTIONS = [
     discord.SelectOption(label="4.5 et plus", value="4.5 et plus"),
 ]
 
+# Elo de depart deduit du niveau NTRP declare, applique tant que le joueur n'a pas encore
+# joue de match (ensuite l'Elo reel pris le relais et n'est plus touche par le profil).
+NIVEAU_STARTING_ELO = {
+    "Débutant complet": 250,
+    "2.5 - 3.0": 450,
+    "3.5": 650,
+    "4.0": 850,
+    "4.5 et plus": 1050,
+}
+
 def _normalize_text(value: str) -> str:
     """Enleve les accents et met en minuscule, pour comparer du texte tape sans accent."""
     decomposed = unicodedata.normalize("NFKD", value.strip().lower())
@@ -1089,6 +1104,15 @@ class ConfirmProfilButton(discord.ui.Button):
             secteur=view.secteur_value,
             age=view.age_value,
         )
+        if view.niveau_value is not None:
+            p = db.get_player(view.target_id)
+            if p and p["matches_played"] == 0:
+                starting_elo = NIVEAU_STARTING_ELO.get(view.niveau_value)
+                if starting_elo is not None and starting_elo != p["elo"]:
+                    db.set_elo(view.target_id, starting_elo)
+                    if interaction.guild:
+                        await sync_tier_role(interaction.guild, view.target_id, starting_elo)
+
         for child in view.children:
             child.disabled = True
         await interaction.response.edit_message(content="✅ Ton profil a été mis à jour !", view=view)
