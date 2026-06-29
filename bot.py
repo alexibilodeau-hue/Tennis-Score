@@ -544,6 +544,7 @@ async def reconcile_all_members():
                 await remove_demande_access(member)
                 p = db.get_player(member.id)
                 if p:
+                    print(f"[debug-tier] {member.id} {member.name}: niveau_ntrp={p['niveau_ntrp']!r} elo={p['elo']} matches_played={p['matches_played']}", flush=True)
                     if p["matches_played"] == 0 and p["niveau_ntrp"] in NIVEAU_STARTING_ELO:
                         expected_elo = NIVEAU_STARTING_ELO[p["niveau_ntrp"]]
                         if p["elo"] != expected_elo:
